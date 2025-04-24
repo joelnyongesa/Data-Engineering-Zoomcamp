@@ -1,0 +1,74 @@
+docker run -it \
+    -e POSTGRES_USER="root" \
+    -e POSTGRES_PASSWORD="root" \
+    -e POSTGRES_DB="ny_taxi" \
+    -v $(pwd)/ny_taxi_postgres_data:/var/lib/postgresql/data \
+    -p 5433:5432 \
+    postgres:13
+
+# To connect to postgres:
+psql -h localhost -p 5433 -U root -d ny_taxi
+
+# Or:
+pgcli -h localhost -p 5433 -u root -d ny_taxi
+
+# Running pgadmin
+docker run -it \
+    -e PGADMIN_DEFAULT_EMAIL="admin@admin.com" \
+    -e PGADMIN_DEFAULT_PASSWORD="root" \
+    -p 8080:80 \
+    dpage/pgadmin4
+
+
+# Network.
+docker network create pg-network
+
+# Original command (container)
+docker run -it \
+    -e POSTGRES_USER="root" \
+    -e POSTGRES_PASSWORD="root" \
+    -e POSTGRES_DB="ny_taxi" \
+    -v $(pwd)/ny_taxi_postgres_data:/var/lib/postgresql/data \
+    -p 5433:5432 \
+    --network=pg-network \
+    --name pg-database-2 \
+    postgres:13
+
+# Postgres command with network
+docker run -it \
+    -e PGADMIN_DEFAULT_EMAIL="admin@admin.com" \
+    -e PGADMIN_DEFAULT_PASSWORD="root" \
+    --network=pg-network \
+    --name pgadmin-2 \
+    -p 8080:80 \
+    dpage/pgadmin4
+
+# Converting the notebook to a script
+jupyter nbconvert --to=script upload-data.ipynb
+
+# Inserting data using the Python script.
+URL="https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-01.parquet"
+
+
+python ingest_data.py \
+    --user=root \
+    --pass=root \
+    --host=localhost \
+    --port=5433 \
+    --db=ny_taxi \
+    --table_name=yellow_taxi_trips \
+    --url=${URL}
+
+# Building the Docker container with the updated script/instructions
+docker build -t taxi_ingest:v001
+
+docker run -it \
+    --network=pg-network \
+    taxi_ingest:v001 \
+        --user=root \
+        --password=root \
+        --host=pg-database-2 \
+        --port=5432 \
+        --db=ny_taxi \
+        --table_name=yellow_taxi_trips \
+        --url=${URL}
